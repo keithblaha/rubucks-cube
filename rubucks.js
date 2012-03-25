@@ -61,6 +61,15 @@ function rubucks() {
 		gl.attachShader(program, fs);
 		gl.linkProgram(program);
 
+		if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) 
+			console.log(gl.getShaderInfoLog(vs));
+		 
+		if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) 
+			console.log(gl.getShaderInfoLog(fs));
+		 
+		if (!gl.getProgramParameter(program, gl.LINK_STATUS)) 
+			console.log(gl.getProgramInfoLog(program));
+
 		gl.useProgram(program);
 
 		program.uColor = gl.getUniformLocation(program, "uColor");
@@ -92,6 +101,6 @@ function rubucks() {
 		
 		gl.vertexAttribPointer(0, cubeBuffer.itemSize, gl.FLOAT, false, 0, 0);
 		
-		gl.drawArrays(gl.GL_QUADS, 0, cubeBuffer.numItems);
+		gl.drawArrays(gl.TRIANGLES, 0, cubeBuffer.numItems);
 	}
 }
