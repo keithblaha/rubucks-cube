@@ -2,120 +2,73 @@ function rubucks() {
 	
 	var CANVAS_HEIGHT = 800;
 	var CANVAS_WIDTH = 800;
-	var CANVAS;
-
+	var NUM_CUBELETS = 26;
+	
 	var VERTICES = [
-		// Front face
-		-1.0, -1.0,  1.0,
-		1.0, -1.0,  1.0,
-		1.0,  1.0,  1.0,
-		-1.0,  1.0,  1.0,
+		0.0, 0.0, 0.0,
+		1.0, 0.0, 0.0,
+		0.0, 1.0, 0.0,
+		0.0, 0.0, 1.0,
+		1.0, 1.0, 0.0,
+		1.0, 0.0, 1.0,
+		0.0, 1.0, 1.0,
+		1.0, 1.0, 1.0,
+    	];
+	
+	var canvas;
+	var gl;
+	
+	var cubeBuffer;
+	var cubelets = [];
+	
+	this.InitGL = function() {
 
-		// Back face
-		-1.0, -1.0, -1.0,
-		-1.0,  1.0, -1.0,
-		1.0,  1.0, -1.0,
-		1.0, -1.0, -1.0,
+		canvas = document.getElementById('canvas');
+		canvas.style.height = CANVAS_HEIGHT+'px';
+		canvas.style.width = CANVAS_WIDTH+'px';
 
-		// Top face
-		-1.0,  1.0, -1.0,
-		-1.0,  1.0,  1.0,
-		1.0,  1.0,  1.0,
-		1.0,  1.0, -1.0,
+		try {
+			gl = canvas.getContext('experimental-webgl');
+			gl.viewport(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+		}
+		catch(e) {}
+		
+		if (!gl) {
+			alert("GET A REAL BROWSER FOO");
+			return;
+		}
+		
+		gl.viewport(0, 0, canvas.width, canvas.height); 
+		gl.clearColor(1, 0, 0, 1);
+		gl.clear(gl.COLOR_BUFFER_BIT);
+	}
+	
+	this.InitShaders = function() {
 
-		// Bottom face
-		-1.0, -1.0, -1.0,
-		1.0, -1.0, -1.0,
-		1.0, -1.0,  1.0,
-		-1.0, -1.0,  1.0,
-
-		// Right face
-		1.0, -1.0, -1.0,
-		1.0,  1.0, -1.0,
-		1.0,  1.0,  1.0,
-		1.0, -1.0,  1.0,
-
-		// Left face
-		-1.0, -1.0, -1.0,
-		-1.0, -1.0,  1.0,
-		-1.0,  1.0,  1.0,
-		-1.0,  1.0, -1.0
-	];
-
-	colors = [
-		[1.0,  1.0,  1.0,  1.0],    // Front face: white
-		[1.0,  0.0,  0.0,  1.0],    // Back face: red
-		[0.0,  1.0,  0.0,  1.0],    // Top face: green
-		[0.0,  0.0,  1.0,  1.0],    // Bottom face: blue
-		[1.0,  1.0,  0.0,  1.0],    // Right face: yellow
-		[1.0,  0.0,  1.0,  1.0]     // Left face: purple
-	]; 
-
-	this.Initialize = function() {
-
-		CANVAS = document.getElementById('canvas');
-		CANVAS.style.height = CANVAS_HEIGHT+'px';
-		CANVAS.style.width = CANVAS_WIDTH+'px';
-
-		CANVAS.getContext('webgl');
+		
 	}
 
 	this.Run = function() {
 
-		this.Initialize();
-		this.DrawCube();
+		this.InitGL();
+		this.InitShaders();
+		this.DrawSimpleCube();
 	}
-
-	this.DrawCube = function() {
-
-		var generatedColors = [];
-		  
-		for (j=0; j<6; j++) {
-
-			var c = colors[j];
-
-			for (var i=0; i<4; i++) {
-				generatedColors = generatedColors.concat(c);
-			}
-		}
-		  
-		  cubeVerticesColorBuffer = gl.createBuffer();
-		  gl.bindBuffer(gl.ARRAY_BUFFER, cubeVerticesColorBuffer);
-		  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(generatedColors), gl.STATIC_DRAW);
-
-		var generatedColors = [];
-	  
-		for (j=0; j<6; j++) {
-
-			var c = colors[j];
-
-			for (var i=0; i<4; i++) {
-				generatedColors = generatedColors.concat(c);
-			}
-		}
-	  
-		  cubeVerticesColorBuffer = gl.createBuffer();
-		  gl.bindBuffer(gl.ARRAY_BUFFER, cubeVerticesColorBuffer);
-		  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(generatedColors), gl.STATIC_DRAW);
-
-ndBuffer(gl.ELEMENT_ARRAY_BUFFER, cubeVerticesIndexBuffer);
-  setMatrixUniforms();
-  gl.drawElements(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0);
-	var generatedColors = [];
-	  
-	for (j=0; j<6; j++) {
-
-		var c = colors[j];
-
-		for (var i=0; i<4; i++) {
-			generatedColors = generatedColors.concat(c);
-		}
-	}
-	  
-	cubeVerticesColorBuffer = gl.createBuffer();
-	gl.bindBuffer(gl.ARRAY_BUFFER, cubeVerticesColorBuffer);
-	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(generatedColors), gl.STATIC_DRAW);
+	
+	this.DrawSimpleCube = function() {
+	
+		cubeBuffer = gl.createBuffer();
+		
+		gl.bindBuffer(gl.ARRAY_BUFFER, cubeBuffer); // tell webgl what buffer to use
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(VERTICES), gl.STATIC_DRAW); // setup the buffer data
+		
+		cubeBuffer.itemSize = 3; // because it's 3d!
+		cubeBuffer.numItems = (VERTICES.length / cubeBuffer.itemSize); // number of vertices
+		
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		
+		gl.vertexAttribPointer(0, cubeBuffer.itemSize, gl.FLOAT, false, 0, 0);
+		
+		gl.drawArrays(gl.GL_QUADS, 0, cubeBuffer.numItems);
 	}
 }
-
-
