@@ -1,46 +1,794 @@
-<!DOCTYPE html>
-
 <html>
 
 <head>
+<title>Rubuck's Cube</title>
+<script type="text/javascript" src="glMatrix-0.9.5.min.js"></script>
+<script type="text/javascript" src="webgl-utils.js"></script>
+<script type="text/javascript" src="jquery-1.7.2.min.js"></script>
+<script type="text/javascript" src="jquery.mousewheel.js"></script>
+
+<script id="shader-fs" type="x-shader/x-fragment">
+	precision mediump float;
 	
-	<title>Rubucks Cube</title>
-	<script src="rubucks.js" type="text/javascript"></script>
+	varying vec4 vColor;
 	
-	<script id="vertex" type="x-shader">
-		attribute vec3 aVertexPosition;
- 
-		void main() {
-			gl_Position = vec4(aVertexPosition, 1.0);
+	void main(void) {
+		gl_FragColor = vColor;
+	}
+</script>
+
+<script id="shader-vs" type="x-shader/x-vertex">
+	attribute vec3 aVertexPosition;
+	attribute vec4 aVertexColor;
+	
+	uniform mat4 uMVMatrix;
+	uniform mat4 uPMatrix;
+	
+	varying vec4 vColor;
+	
+	void main(void) {
+		gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+		vColor = aVertexColor;
+	}
+</script>
+
+<script type="text/javascript">
+
+	var gl;
+	
+	function initGL(canvas) {
+	
+		try {
+			gl = canvas.getContext("experimental-webgl");
+			gl.viewportWidth = canvas.width;
+			gl.viewportHeight = canvas.height;
+		} catch (e) {
 		}
-	</script>  
-	
-	<script id="fragment" type="x-shader">
-		#ifdef GL_ES
-			precision highp float;
-		#endif
-		                        
-		uniform vec4 uColor;
-		                        
-		void main() {
-			gl_FragColor = uColor;
+		if (!gl) {
+			alert("GET A REAL BROWSER FOO");
 		}
-	</script>
+	}
 	
+	function getShader(gl, id) {
+	
+		var shaderScript = document.getElementById(id);
+		if (!shaderScript) {
+			return null;
+		}
+	
+		var str = "";
+		var k = shaderScript.firstChild;
+		while (k) {
+			if (k.nodeType == 3) {
+				str += k.textContent;
+			}
+			k = k.nextSibling;
+		}
+	
+		var shader;
+		if (shaderScript.type == "x-shader/x-fragment") {
+			shader = gl.createShader(gl.FRAGMENT_SHADER);
+		} else if (shaderScript.type == "x-shader/x-vertex") {
+			shader = gl.createShader(gl.VERTEX_SHADER);
+		} else {
+			return null;
+		}
+	
+		gl.shaderSource(shader, str);
+		gl.compileShader(shader);
+	
+		if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+			alert(gl.getShaderInfoLog(shader));
+			return null;
+		}
+	
+		return shader;
+	}
+	
+	var shaderProgram;
+	
+	function initShaders() {
+	
+		var fragmentShader = getShader(gl, "shader-fs");
+		var vertexShader = getShader(gl, "shader-vs");
+	
+		shaderProgram = gl.createProgram();
+		gl.attachShader(shaderProgram, vertexShader);
+		gl.attachShader(shaderProgram, fragmentShader);
+		gl.linkProgram(shaderProgram);
+	
+		if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+			alert("Could not initialise shaders");
+		}
+	
+		gl.useProgram(shaderProgram);
+	
+		shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+		gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+	
+		shaderProgram.vertexColorAttribute = gl.getAttribLocation(shaderProgram, "aVertexColor");
+		gl.enableVertexAttribArray(shaderProgram.vertexColorAttribute);
+	
+		shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
+		shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+	}
+	
+	var mvMatrix = mat4.create();
+	var mvMatrixStack = [];
+	var pMatrix = mat4.create();
+	
+	function mvPushMatrix() {
+	
+		var copy = mat4.create();
+		mat4.set(mvMatrix, copy);
+		mvMatrixStack.push(copy);
+	}
+	
+	function mvPopMatrix() {
+	
+		if (mvMatrixStack.length == 0) {
+			throw "Invalid popMatrix!";
+		}
+		mvMatrix = mvMatrixStack.pop();
+	}
+	
+	function setMatrixUniforms() {
+	
+		gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+		gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix);
+	}
+	
+	function degToRad(degrees) {
+	
+		return degrees * Math.PI / 180;
+	}
+	
+	var cubeVertexPositionBuffer;
+	var cubeVertexColorBuffer;
+	var cubeVertexIndexBuffer;
+	
+	var WHITE = [1.0, 1.0, 1.0, 1.0];
+	var RED = [1.0, 0.0, 0.0, 1.0];
+	var BLUE = [0.0, 0.0, 1.0, 1.0];
+	var ORANGE = [1.0, 0.5, 0.0, 1.0];
+	var GREEN = [0.0, 1.0, 0.0, 1.0];
+	var YELLOW = [1.0, 1.0, 0.0, 1.0];
+	
+	var cubeletColorsClear = [
+			// Front face
+			WHITE,
+			WHITE,
+			WHITE,
+			WHITE,
+			WHITE,
+			WHITE,
+			WHITE,
+			WHITE,
+			WHITE,
+			
+			// Back face
+			RED,
+			RED,
+			RED,
+			RED,
+			RED,
+			RED,
+			RED,
+			RED,
+			RED,
+			
+			// Top face
+			BLUE,
+			BLUE,
+			BLUE,
+			BLUE,
+			BLUE,
+			BLUE,
+			BLUE,
+			BLUE,
+			BLUE,
+			
+			// Bottom face
+			GREEN,
+			GREEN,
+			GREEN,
+			GREEN,
+			GREEN,
+			GREEN,
+			GREEN,
+			GREEN,
+			GREEN,
+			
+			// Left face
+			YELLOW,
+			YELLOW,
+			YELLOW,
+			YELLOW,
+			YELLOW,
+			YELLOW,
+			YELLOW,
+			YELLOW,
+			YELLOW,
+			
+			// Right face
+			ORANGE,
+			ORANGE,
+			ORANGE,
+			ORANGE,
+			ORANGE,
+			ORANGE,
+			ORANGE,
+			ORANGE,
+			ORANGE
+		];
+		
+	var cubeletColors = cubeletColorsClear.slice(0);
+		
+	function initColorBuffers() {
+	
+		var unpackedCubeletColors = [];
+		for (var i in cubeletColors) {
+			var cubeletColor = cubeletColors[i];
+			for (var j=0; j < 6; j++) {
+				unpackedCubeletColors = unpackedCubeletColors.concat(cubeletColor);
+			}
+		}
+		
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(unpackedCubeletColors), gl.STATIC_DRAW);
+		cubeVertexColorBuffer.itemSize = 4;
+		cubeVertexColorBuffer.numItems = unpackedCubeletColors.length / 4;
+	}
+	
+	function initBuffers() {
+	
+		cubeVertexPositionBuffer = gl.createBuffer();
+		gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexPositionBuffer);
+	
+		cubeletVerts = [];
+	
+		//generate cubelet verts for front face
+		cubeletVerts = cubeletVerts.concat( generateCubeletVerts( [-1, -1/3, 1/3], [1, 1/3, -1/3], [1],
+											 [ [0, 0, 0],
+											   [2/3, 0, 0],
+											   [0, -2/3, 0],
+											   [0, -2/3, 0],
+											   [2/3, 0, 0],
+											   [2/3, -2/3, 0] ] ) );
+											   
+		//generate cubelet verts for back face
+		cubeletVerts = cubeletVerts.concat( generateCubeletVerts( [-1, -1/3, 1/3], [1, 1/3, -1/3], [-1],
+											 [ [0, 0, 0],
+											   [2/3, 0, 0],
+											   [0, -2/3, 0],
+											   [0, -2/3, 0],
+											   [2/3, 0, 0],
+											   [2/3, -2/3, 0] ] ) );
+											   
+		//generate cubelet verts for top face
+		cubeletVerts = cubeletVerts.concat( generateCubeletVerts( [-1, -1/3, 1/3], [1], [-1, -1/3, 1/3],
+											 [ [0, 0, 0],
+											   [2/3, 0, 0],
+											   [0, 0, 2/3],
+											   [0, 0, 2/3],
+											   [2/3, 0, 0],
+											   [2/3, 0, 2/3] ] ) );
+											   
+		//generate cubelet verts for bottom face
+		cubeletVerts = cubeletVerts.concat( generateCubeletVerts( [-1, -1/3, 1/3], [-1], [-1, -1/3, 1/3],
+											 [ [0, 0, 0],
+											   [2/3, 0, 0],
+											   [0, 0, 2/3],
+											   [0, 0, 2/3],
+											   [2/3, 0, 0],
+											   [2/3, 0, 2/3] ] ) );
+											   
+		//generate cubelet verts for left face
+		cubeletVerts = cubeletVerts.concat( generateCubeletVerts( [-1], [1, 1/3, -1/3], [-1, -1/3, 1/3],
+											 [ [0, 0, 0],
+											   [0, 0, 2/3],
+											   [0, -2/3, 0],
+											   [0, -2/3, 0],
+											   [0, 0, 2/3],
+											   [0, -2/3, 2/3] ] ) );
+											   
+		//generate cubelet verts for right face
+		cubeletVerts = cubeletVerts.concat( generateCubeletVerts( [1], [1, 1/3, -1/3], [-1, -1/3, 1/3],
+											 [ [0, 0, 0],
+											   [0, 0, 2/3],
+											   [0, -2/3, 0],
+											   [0, -2/3, 0],
+											   [0, 0, 2/3],
+											   [0, -2/3, 2/3] ] ) );
+		
+		var cubeletTraingleVertexIndices = [];
+		for(var i = 0; i < 324; i++) {
+			cubeletTraingleVertexIndices.push(i);
+		}
+		
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(cubeletVerts), gl.STATIC_DRAW);
+		cubeVertexPositionBuffer.itemSize = 3;
+		cubeVertexPositionBuffer.numItems = cubeletVerts.length / 3;
+		
+		cubeVertexColorBuffer = gl.createBuffer();
+		gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexColorBuffer);
+		
+		initColorBuffers();
+	
+		cubeVertexIndexBuffer = gl.createBuffer();
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
+		
+		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(cubeletTraingleVertexIndices), gl.STATIC_DRAW);
+		cubeVertexIndexBuffer.itemSize = 1;
+		cubeVertexIndexBuffer.numItems = cubeletTraingleVertexIndices.length;
+	}
+	
+	var rCube = 0;
+	var vCube = { x : 0.0, y : 0.0};
+	var d = -6;
+	
+	function generateCubeletVerts(x, y, z, path) {
+	
+		var newCubeletVerts = [];
+		for(var i in x) {
+			for(var j in y) {
+				for(var k in z) {
+					for(var p in path) {
+						var d = path[p];
+						newCubeletVerts.push(x[i] + d[0]);
+						newCubeletVerts.push(y[j] + d[1]);
+						newCubeletVerts.push(z[k] + d[2]);
+					}
+				}
+			}
+		}
+		
+		return newCubeletVerts;
+	}
+	
+	function drawScene() {
+	
+		gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+	
+		mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
+	
+		mat4.identity(mvMatrix);
+	
+		mat4.translate(mvMatrix, [0.0, 0.0, d]);
+	
+		mvPushMatrix();
+		
+		mat4.rotate(mvMatrix, degToRad(rCube), [ vCube.x , vCube.y , 0.0 ]);
+	
+		gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexPositionBuffer);
+		gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, cubeVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+	
+		gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexColorBuffer);
+		gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, cubeVertexColorBuffer.itemSize, gl.FLOAT, false, 0, 0);
+	
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
+		setMatrixUniforms();
+		gl.drawElements(gl.TRIANGLES, cubeVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+	
+		mvPopMatrix();
+	}
+	
+	var lastTime = 0;
+	var paused = false;
+	
+	function animate() {
+	
+		var timeNow = new Date().getTime();
+		if (lastTime != 0) {
+			var elapsed = timeNow - lastTime;
+	
+			if(!paused) {
+				rCube -= (75 * elapsed) * Math.sqrt(Math.abs(vCube.x+0.1)) * Math.sqrt(Math.abs(vCube.y+0.1)) / 200;
+			}
+		}
+		lastTime = timeNow;
+	}
+	
+	function tick() {
+	
+		requestAnimFrame(tick);
+		drawScene();
+		animate();
+	}
+					   
+	var cubeletSwapLeftUp = [
+							 [0, 18, 11, 29, 0],
+							 [1, 19, 10, 28, 1],
+							 [2, 20, 9, 27, 2],
+							 [37, 39, 43, 41, 37],
+							 [36, 42, 44, 38, 36]
+						    ];
+						   
+	var cubeletSwapLeftDown = [
+								[0, 29, 11, 18, 0],
+								[1, 28, 10, 19, 1],
+								[2, 27, 9, 20, 2],
+								[37, 41, 43, 39, 37],
+								[36, 38, 44, 42, 36]
+							  ];
+							  
+	var cubeletSwapTopLeft = [
+								[0, 36, 15, 47, 0],
+								[3, 37, 12, 46, 3],
+								[6, 38, 9, 45, 6],
+								[19, 21, 25, 23, 19],
+								[18, 24, 26, 20, 18]
+							 ];
+							 
+	var cubeletSwapTopRight = [
+								[0, 47, 15, 36, 0],
+								[3, 46, 12, 37, 3],
+								[6, 45, 9, 38, 6],
+								[19, 23, 25, 21, 19],
+								[18, 20, 26, 24, 18]
+							  ];
+							 
+	var cubeletSwapRightUp =  [
+								[6, 24, 17, 35, 6],
+								[7, 25, 16, 34, 7],
+								[8, 26, 15, 33, 8],
+								[50, 46, 48, 52, 50],
+								[47, 45, 51, 53, 47]
+							  ];
+							  
+	var cubeletSwapRightDown =  [
+									[6, 35, 17, 24, 6],
+									[7, 34, 16, 25, 7],
+									[8, 33, 15, 26, 8],
+									[50, 52, 48, 46, 50],
+									[47, 53, 51, 45, 47]
+							    ];
+								
+	var cubeletSwapBottomLeft = [
+									[2, 42, 17, 53, 2],
+									[5, 43, 14, 52, 5],
+									[8, 44, 11, 51, 8],
+									[27, 33, 35, 29, 27],
+									[30, 34, 32, 28, 30]
+								];
+								
+	var cubeletSwapBottomRight = [
+									[2, 53, 17, 42, 2],
+									[5, 52, 14, 43, 5],
+									[8, 51, 11, 44, 8],
+									[27, 29, 35, 33, 27],
+									[30, 28, 32, 34, 30]
+								 ];
+	
+	var cubeletSwapFrontCounterClock =  [
+											[26, 38, 29, 53, 26],
+											[23, 41, 32, 50, 23],
+											[20, 44, 35, 47, 20],
+											[0, 2, 8, 6, 0],
+											[1, 5, 7, 3, 1]
+										];
+	
+	var cubeletSwapFrontClock = [
+									[26, 53, 29, 38, 26],
+									[23, 50, 32, 41, 23],
+									[20, 47, 35, 44, 20],
+									[0, 6, 8, 2, 0],
+									[1, 3, 7, 5, 1]
+								];
+								
+	var cubeletSwapBackCounterClock =  [
+											[24, 36, 27, 51, 24],
+											[21, 39, 30, 48, 21],
+											[18, 42, 33, 45, 18],
+											[9, 11, 17, 15, 9],
+											[12, 10, 14, 16, 12]
+										];
+	
+	var cubeletSwapBackClock = [
+									[24, 51, 27, 36, 24],
+									[21, 48, 30, 39, 21],
+									[18, 45, 33, 42, 18],
+									[9, 15, 17, 11, 9],
+									[12, 16, 14, 10, 12]
+								];
+	
+	function initMouseHandlers() {
+	
+		var $canvas = $( '#canvas' );
+	
+		$canvas.mousedown( $canvas, function(e) {
+			
+			var x = (e.offsetY - (e.data.height() / 2) ) / ( -1/2 * e.data.height() );
+			var y = (e.offsetX - (e.data.width() / 2) ) / ( -1/2 * e.data.width() );
+			
+			vCube.x = (Math.abs(x) < 0.25) ? 0 : ((x < 0) ? x + .2 : x - .2);
+			vCube.y = (Math.abs(y) < 0.25) ? 0 : ((y < 0) ? y + .2 : y - .2);
+		});
+		
+		$( document ).on('mousewheel', null, $canvas, function(e, delta) {
+			
+			e.preventDefault();
+			d = ((d + delta > -5) ? -5 : ((d + delta < -50) ? -50 : d + delta));
+		});
+		console.log(cubeletColors.length);
+		$( document ).on('keypress', function(e) {
+		
+			switch( e.keyCode ) {
+			
+				//pause game on space
+				case 32:
+					e.preventDefault();
+					paused = !paused;
+					break;
+					
+				// randomize cubelets on t
+				case 116:
+					e.preventDefault();
+					clearCube();
+					randomizeCubelets();
+					break;
+					
+				// clear cube on g
+				case 103:
+					e.preventDefault();
+					clearCube();
+					initColorBuffers();
+					break;
+			
+				//spin left up
+				case 113:
+					// q
+					e.preventDefault();
+					
+					swapCubeletColors( cubeletSwapLeftUp );
+					initColorBuffers();
+					
+					break;
+				// spin left down
+				case 97:
+					// a
+					e.preventDefault();
+					
+					swapCubeletColors( cubeletSwapLeftDown );
+					initColorBuffers();
+					
+					break;
+				
+				//spin top left
+				case 119:
+					// w
+					e.preventDefault();
+					
+					swapCubeletColors( cubeletSwapTopLeft );
+					initColorBuffers();
+					
+					break;
+				//spin top right
+				case 101:
+					// e
+					e.preventDefault();
+					
+					swapCubeletColors( cubeletSwapTopRight );
+					initColorBuffers();
+					
+					break;
+					
+				//spin right up
+				case 114:
+					// r
+					e.preventDefault();
+					
+					swapCubeletColors( cubeletSwapRightUp );
+					initColorBuffers();
+					
+					break;
+				//spin right down
+				case 102:
+					// f
+					e.preventDefault();
+					
+					swapCubeletColors( cubeletSwapRightDown );
+					initColorBuffers();
+					
+					break;
+					
+				//spin bottom left
+				case 115:
+					// s
+					e.preventDefault();
+					
+					swapCubeletColors( cubeletSwapBottomLeft );
+					initColorBuffers();
+					
+					break;
+				//spin bottom right
+				case 100:
+					// d
+					e.preventDefault();
+					
+					swapCubeletColors( cubeletSwapBottomRight );
+					initColorBuffers();
+					
+					break;
+					
+				//spin front counterclockwise
+				case 122:
+					// z
+					e.preventDefault();
+					
+					swapCubeletColors( cubeletSwapFrontCounterClock );
+					initColorBuffers();
+					
+					break;
+				//spin front clockwise
+				case 120:
+					// x
+					e.preventDefault();
+					
+					swapCubeletColors( cubeletSwapFrontClock );
+					initColorBuffers();
+					
+					break;
+					
+				//spin back clockwise
+				case 99:
+					// c
+					e.preventDefault();
+					
+					swapCubeletColors( cubeletSwapBackClock );
+					initColorBuffers();
+					
+					break;
+				//spin back counterclockwise
+				case 118:
+					// v
+					e.preventDefault();
+					
+					swapCubeletColors( cubeletSwapBackCounterClock );
+					initColorBuffers();
+					
+					break;
+			}
+		});
+	}
+	
+	function swapCubeletColors(swaps) {
+	
+		for(var i in swaps) {
+		
+			var swapPath = swaps[i];
+			var prevColor = cubeletColors[ swapPath[0] ];
+			var nextColor;
+			
+			for(var j = 1; j < swapPath.length; j++) {
+			
+				nextColor = prevColor;
+				prevColor = cubeletColors[ swapPath[j] ];
+				
+				cubeletColors[ swapPath[j] ] = nextColor;
+			}
+			
+			cubeletColors[ swapPath[0] ] = nextColor;
+		}
+	}
+	
+	function randomizeCubelets() {
+	
+		for(var i = 0; i < 42; i++) {
+			var chaos = Math.floor((Math.random()*12));
+			
+			switch( chaos ) {
+			
+				case 0:
+					swapCubeletColors(cubeletSwapLeftUp);
+					initColorBuffers();
+					break;
+			
+				case 1:
+					swapCubeletColors(cubeletSwapLeftDown);
+					initColorBuffers();
+					break;
+					
+				case 2:
+					swapCubeletColors(cubeletSwapTopLeft);
+					initColorBuffers();
+					break;
+					
+				case 3:
+					swapCubeletColors(cubeletSwapTopRight);
+					initColorBuffers();
+					break;
+					
+				case 4:
+					swapCubeletColors(cubeletSwapRightUp);
+					initColorBuffers();
+					break;
+			
+				case 5:
+					swapCubeletColors(cubeletSwapRightDown);
+					initColorBuffers();
+					break;
+					
+				case 6:
+					swapCubeletColors(cubeletSwapBottomLeft);
+					initColorBuffers();
+					break;
+					
+				case 7:
+					swapCubeletColors(cubeletSwapBottomRight);
+					initColorBuffers();
+					break;
+				
+				case 8:
+					swapCubeletColors(cubeletSwapFrontCounterClock);
+					initColorBuffers();
+					break;
+			
+				case 9:
+					swapCubeletColors(cubeletSwapFrontClock);
+					initColorBuffers();
+					break;
+					
+				case 10:
+					swapCubeletColors(cubeletSwapBackClock);
+					initColorBuffers();
+					break;
+					
+				case 11:
+					swapCubeletColors(cubeletSwapBackCounterClock);
+					initColorBuffers();
+					break;
+			}
+		}
+	}
+	
+	function clearCube() {
+	
+		cubeletColors = cubeletColorsClear.slice(0);
+	}
+	
+	function webGLStart() {
+	
+		var canvas = document.getElementById("canvas");
+		
+		initGL(canvas);
+		initShaders();
+		initBuffers();
+		initMouseHandlers();
+		
+		gl.clearColor(0.0, 0.0, 0.0, 1.0);
+		gl.enable(gl.DEPTH_TEST);
+		
+		tick();
+	}
+</script>
+
 </head>
 
-<body>
-	
-	<center>
-		<canvas id="canvas"/>
-	</center>
+<body onload="webGLStart();">
 
-	<script type="text/javascript">
-		document.rubucks = new rubucks();
-		document.rubucks.Run();
-	</script>
+    <canvas id="canvas" width="800" height="800"></canvas>
 	
+	<p>click outside center of canvas to spin cube that way- distance from center is proportional to rotational speed</p>
+	<p>click center of canvas to reset view</p>
+	<p>scrollwheel to zoom</p>
+	<p>space to pause</p>
+	<p>t to randomize cubeblets</p>
+	<p>g to clear cube</p>
+	<br/>
+	<p>all directions relative to front (white) face</p>
+	<p>q to rotate left face up</p>
+	<p>a to rotate left face down</p>
+	<p>r to rotate right face up</p>
+	<p>f to rotate right face down</p>
+	<p>w to rotate top face left</p>
+	<p>e to rotate top face right</p>
+	<p>s to rotate bottom face left</p>
+	<p>d to rotate bottom face right</p>
+	<p>z to rotate front face counterclockwise</p>
+	<p>x to rotate front face clockwise</p>
+	<p>c to rotate bottom face clockwise</p>
+	<p>v to rotate bottom face counterclockwise</p>
 </body>
 
 </html>
-
